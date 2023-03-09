@@ -1,25 +1,25 @@
 name: Build wheels
 
 on:
-  workflow_dispatch: {}
-  push:
-    branches:
-      - main
-    tags:
-      - "v[0-9]+*"
+  workflow_dispatch:
+    inputs:
+      xformers-ref:
+        description: 'xformers branch, tag or SHA to checkout'
+        type: string
+        required: true
 
 # this yaml file can be cleaned up using yaml anchors, but they're not supported in github actions yet
 # https://github.com/actions/runner/issues/1182
 
 env:
   # you need at least cuda 5.0 for some of the stuff compiled here.
-  TORCH_CUDA_ARCH_LIST: "5.0+PTX 6.0 6.1 7.0 7.5 8.0 8.6"
+  TORCH_CUDA_ARCH_LIST: "7.0 7.5 8.0 8.6"
   FORCE_CUDA: 1
   MAX_JOBS: 1 # will crash otherwise
   DISTUTILS_USE_SDK: 1 # otherwise distutils will complain on windows about multiple versions of msvc
   XFORMERS_BUILD_TYPE: "Release"
   TWINE_USERNAME: __token__
-  XFORMERS_PACKAGE_FROM: "wheel-${{ github.ref_name }}"
+  XFORMERS_PACKAGE_FROM: "wheel-${{ github.repository }}"
 
 jobs:
   build_wheels:
@@ -28,9 +28,7 @@ jobs:
       matrix:
         os:
           - ubuntu-22.04
-          - windows-2019
         python:
-          - "3.7"
           - "3.8"
           - "3.9"
           - "3.10"
@@ -70,9 +68,32 @@ jobs:
       - name: Recursive checkout
         uses: actions/checkout@v3
         with:
+          repository: facebookresearch/xformers
+          ref: ${{ inputs.xformers-ref }}
           submodules: recursive
           path: "."
           fetch-depth: 0 # for tags
+
+      - name: Checkout latest compute_wheel_version.py
+        uses: actions/checkout@v3
+        with:
+          repository: facebookresearch/xformers
+          path: "latest"
+
+      - name: Copy latest compute_wheel_version.py
+        run: |
+          cp latest/packaging/compute_wheel_version.py packaging/compute_wheel_version.py
+
+      - name: Set short git commit SHA
+        id: commit
+        run: |
+          set -Eeuo pipefail
+          git config --global --add safe.directory "*"
+          sha=$(git rev-parse --short HEAD)
+          echo "sha=$sha" >> $GITHUB_OUTPUT
+
+      - name: Confirm git commit SHA output
+        run: echo ${{ steps.commit.outputs.sha }}
 
       - if: runner.os == 'Linux'
         name: (Linux) install cuda
@@ -90,13 +111,16 @@ jobs:
           python: ${{ matrix.python }}
 
       - name: Define version
+        id: define
         run: |
           set -Eeuo pipefail
           git config --global --add safe.directory "*"
           $PY -m pip install packaging
           version=`$PY packaging/compute_wheel_version.py`
+          version=${version/.dev./.}
           echo "BUILD_VERSION=$version" >> ${GITHUB_ENV}
           cat ${GITHUB_ENV}
+          echo "version=$version" >> $GITHUB_OUTPUT
 
       - name: Setup proper pytorch dependency in "requirements.txt"
         run: |
@@ -112,25 +136,29 @@ jobs:
         env:
           PLAT_ARG: ${{ contains(matrix.os, 'ubuntu') && '--plat-name manylinux2014_x86_64' || '' }}
 
+      - name: Rename wheel # PEP File name convention
+        run: |
+          rename "${{ steps.define.outputs.version }}" "${{ steps.define.outputs.version }}+git.${{ steps.commit.outputs.sha }}+torch${{ matrix.config.torch_version }}" dist/*.whl 
+
       - uses: actions/upload-artifact@v3
         with:
-          name: ${{ matrix.os }}-py${{ matrix.python }}-torch${{ matrix.config.torch_version }}
+          name: ${{ matrix.os }}-xformers-${{ steps.define.outputs.version }}+git.${{ steps.commit.outputs.sha }}+torch${{ matrix.config.torch_version }}-py${{ matrix.python }}
           path: dist/*.whl
 
-      - name: Upload wheel to PyPi
-        if: ${{ matrix.config.publish }}
-        run: $PY -m twine upload dist/*.whl
-        env:
-          TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}
-
-      - name: Upload source distribution to PyPi
-        if: ${{ matrix.config.publish && matrix.sdist }}
-        run: |
-          rm -rf dist/
-          # unpin pytorch version
-          git checkout HEAD -- ./requirements.txt
-          $PY setup.py sdist -d sdist/
-          $PY -m twine upload sdist/*
-        env:
-          TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}
+  release_wheels:
+    needs: [build_wheels]
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - id: get-artifact
+        uses: actions/download-artifact@v3
+      - id: release
+        uses: ncipollo/release-action@v1
+        with:
+          artifacts: "*/*.whl"
+          name: "xformers-${{ steps.define.outputs.version }}+git.${{ steps.commit.outputs.sha }}"
+          tag: ${{ github.run_id }}
+          commit: ${{ github.sha }}
+          body: "https://github.com/facebookresearch/xformers/commit/${{ inputs.xformers-ref }}"
 # Note: it might be helpful to have additional steps that test if the built wheels actually work
