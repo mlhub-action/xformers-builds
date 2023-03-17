@@ -139,7 +139,7 @@ jobs:
 
       - name: Rename wheel # PEP File name convention
         run: |
-          rename "${{ steps.define.outputs.version }}" "${{ steps.define.outputs.version }}+git.${{ steps.commit.outputs.sha }}+torch${{ matrix.config.torch_version }}" dist/*.whl 
+          for f in dist/*.whl; do mv "$f" "$(echo "$f" | sed s/${{ steps.define.outputs.version }}/${{ steps.define.outputs.version }}+git.${{ steps.commit.outputs.sha }}+torch${{ matrix.config.torch_version }}/)"; done
 
       - uses: actions/upload-artifact@v3
         with:
