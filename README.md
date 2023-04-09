@@ -11,7 +11,7 @@ Community [xformers](https://github.com/facebookresearch/xformers) builds with G
  - Package : Python Wheel
  - OS compatibility : [manylinux2014_x86_64](https://github.com/pypa/manylinux)
  - [CUDA Application Compatibility](https://docs.nvidia.com/deploy/cuda-compatibility/index.html#use-the-right-compat-package) : 11.6, 11.7
- - [PyTorch](https://pytorch.org/get-started/locally/) : 1.12.1, 1.13.1
+ - [PyTorch](https://pytorch.org/get-started/locally/) : 1.12.1, 1.13.1 2.0.0
  - [GPU Compute Capability](https://developer.nvidia.com/cuda-gpus) : 7.0 7.5 8.0 8.6+PTX
 
 ## Installing xFormers
