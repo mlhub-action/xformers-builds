@@ -18,7 +18,7 @@ Community [xformers](https://github.com/facebookresearch/xformers) builds with G
 
 ## Installing xFormers
 ```bash
-pip install -U -I --no-deps TODO.whl
+pip install --upgrade --ignore-installed NAME.whl
 ```
  
 ## Credits
